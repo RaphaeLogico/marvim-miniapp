@@ -28,6 +28,7 @@
   }
   button:disabled { opacity: 0.5; }
   #error { min-height: 1.4em; margin-top: 12px; color: var(--tg-theme-destructive-text-color, #d33); }
+  #nota { margin-top: 8px; font-size: 14px; color: var(--tg-theme-hint-color, GrayText); }
 </style>
 </head>
 <body>
@@ -37,6 +38,7 @@
   <input id="quando" type="datetime-local" step="60">
   <button id="agendar" type="button">Agendar</button>
   <div id="error" role="alert"></div>
+  <div id="nota"></div>
 
 <script>
 (function () {
@@ -46,6 +48,7 @@
   var MAX_ID = 2147483647; // o id do Lembrete é um inteiro de 32 bits no bot
 
   // "2026-10-09T09:00": o relógio de Lisboa naquele instante, no formato do <input type="datetime-local">.
+  // Pode lançar exceção em aparelhos cujo WebView não conhece o fuso: quem chama trata.
   function lisbonLocal(date) {
     var parts = {};
     new Intl.DateTimeFormat('en-CA', {
@@ -75,38 +78,54 @@
   var input = document.getElementById('quando');
   var button = document.getElementById('agendar');
   var error = document.getElementById('error');
+  var note = document.getElementById('nota');
   var id = reminderId(location.search);
 
   function showError(text) { error.textContent = text; }
 
   function submit() {
-    var now = new Date();
-    if (!input.value) return showError('Escolha uma data e uma hora.');
-    if (input.value <= lisbonLocal(now)) return showError('Esse horário já passou.');
-    // O bot confere tudo de novo: esta página só entrega o que o usuário escolheu.
-    tg.sendData(JSON.stringify({ id: id, quando: input.value }));
+    try {
+      if (!input.value) return showError('Escolha uma data e uma hora.');
+      // O bot confere tudo de novo; esta checagem só poupa uma ida e volta. Se o aparelho não sabe a hora de Lisboa, o bot decide.
+      var lisbonNow = null;
+      try { lisbonNow = lisbonLocal(new Date()); } catch (e) { /* sem a checagem local */ }
+      if (lisbonNow !== null && input.value <= lisbonNow) return showError('Esse horário já passou.');
+      tg.sendData(JSON.stringify({ id: id, quando: input.value }));
+    } catch (e) {
+      showError('Não consegui enviar o horário: ' + e.message);
+    }
   }
 
-  var now = new Date();
-  input.min = lisbonLocal(now);
-  input.value = suggestedTime(now);
-  input.addEventListener('input', function () { showError(''); });
-
+  // 1º, antes de tudo: deixar o botão funcionando. Nada que venha depois pode impedir isso (num WebView que lance erro
+  // nas linhas de baixo, o botão ficava na tela mas sem ação).
   // Fora do Telegram o script dele deixa platform = "unknown". Não dá para usar initData: um Mini App aberto por botão
   // de teclado (o nosso caso, o único em que sendData funciona) não recebe os dados de inicialização.
-  if (!tg || !tg.platform || tg.platform === 'unknown') {
+  var insideTelegram = !!tg && !!tg.platform && tg.platform !== 'unknown';
+  if (!insideTelegram) {
     showError('Abra esta página pelo botão do bot, no Telegram.');
     button.disabled = true;
   } else if (id === null) {
     showError('Esta página precisa ser aberta pelo botão do /lembrete.');
     button.disabled = true;
   } else {
-    tg.ready();
-    tg.expand();
     // A confirmação é um botão da própria página, e não o botão principal do Telegram (MainButton): ele não aparecia
-    // no Telegram para Android com o Mini App aberto por botão de teclado, e sem ele não havia como confirmar.
+    // no Telegram para Android com o Mini App aberto por botão de teclado.
     button.addEventListener('click', submit);
   }
+
+  // 2º, o resto é conforto, e cada parte pode falhar sozinha sem derrubar as outras. O que falhar aparece na tela.
+  if (insideTelegram) {
+    try { tg.ready(); } catch (e) { note.textContent = 'Aviso do Telegram (ready): ' + e.message; }
+    try { tg.expand(); } catch (e) { note.textContent = 'Aviso do Telegram (expand): ' + e.message; }
+  }
+  try {
+    var now = new Date();
+    input.min = lisbonLocal(now);
+    input.value = suggestedTime(now);
+  } catch (e) {
+    note.textContent = 'Não consegui sugerir um horário neste aparelho (' + e.message + '). Escolha a data e a hora.';
+  }
+  input.addEventListener('input', function () { showError(''); });
 })();
 </script>
 </body>
