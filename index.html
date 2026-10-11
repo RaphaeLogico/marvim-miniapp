@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Escolher data e hora</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; padding: 24px 16px;
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--tg-theme-bg-color, Canvas);
+    color: var(--tg-theme-text-color, CanvasText);
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .hint { margin: 0 0 20px; color: var(--tg-theme-hint-color, GrayText); }
+  label { display: block; margin-bottom: 8px; font-weight: 600; }
+  input {
+    box-sizing: border-box; width: 100%; padding: 12px; font: inherit;
+    color: inherit; background: var(--tg-theme-secondary-bg-color, Field);
+    border: 1px solid var(--tg-theme-hint-color, GrayText); border-radius: 10px;
+  }
+  #error { min-height: 1.4em; margin-top: 12px; color: var(--tg-theme-destructive-text-color, #d33); }
+</style>
+</head>
+<body>
+  <h1>Quando devo te lembrar?</h1>
+  <p class="hint">Horário de Lisboa</p>
+  <label for="quando">Data e hora</label>
+  <input id="quando" type="datetime-local" step="60">
+  <div id="error" role="alert"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TIME_ZONE = 'Europe/Lisbon';
+  var MAX_ID = 2147483647; // o id do Lembrete é um inteiro de 32 bits no bot
+
+  // "2026-10-09T09:00": o relógio de Lisboa naquele instante, no formato do <input type="datetime-local">.
+  function lisbonLocal(date) {
+    var parts = {};
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(date).forEach(function (p) { parts[p.type] = p.value; });
+    return parts.year + '-' + parts.month + '-' + parts.day + 'T' + parts.hour + ':' + parts.minute;
+  }
+
+  // Daqui a 1 hora, arredondado para cima de 5 em 5 minutos.
+  function suggestedTime(now) {
+    var d = new Date(now.getTime() + 60 * 60 * 1000);
+    d.setSeconds(0, 0);
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5);
+    return lisbonLocal(d);
+  }
+
+  // O id do Lembrete que o bot pôs na URL (?id=1234); null se não veio ou não é válido.
+  function reminderId(search) {
+    var raw = new URLSearchParams(search).get('id');
+    if (!/^\d+$/.test(raw || '')) return null;
+    var id = Number(raw);
+    return id > 0 && id <= MAX_ID ? id : null;
+  }
+
+  var tg = window.Telegram && window.Telegram.WebApp;
+  var input = document.getElementById('quando');
+  var error = document.getElementById('error');
+  var id = reminderId(location.search);
+
+  function showError(text) { error.textContent = text; }
+
+  function submit() {
+    var now = new Date();
+    if (!input.value) return showError('Escolha uma data e uma hora.');
+    if (input.value <= lisbonLocal(now)) return showError('Esse horário já passou.');
+    // O bot confere tudo de novo: esta página só entrega o que o usuário escolheu.
+    tg.sendData(JSON.stringify({ id: id, quando: input.value }));
+  }
+
+  var now = new Date();
+  input.min = lisbonLocal(now);
+  input.value = suggestedTime(now);
+  input.addEventListener('input', function () { showError(''); });
+
+  // Fora do Telegram o script dele deixa platform = "unknown". Não dá para usar initData: um Mini App aberto por botão
+  // de teclado (o nosso caso, o único em que sendData funciona) não recebe os dados de inicialização.
+  if (!tg || !tg.platform || tg.platform === 'unknown') {
+    showError('Abra esta página pelo botão do bot, no Telegram.');
+  } else if (id === null) {
+    showError('Esta página precisa ser aberta pelo botão do /lembrete.');
+  } else {
+    tg.ready();
+    tg.expand();
+    tg.MainButton.setText('Agendar').show();
+    tg.MainButton.onClick(submit);
+  }
+})();
+</script>
+</body>
+</html>
