@@ -21,6 +21,12 @@
     color: inherit; background: var(--tg-theme-secondary-bg-color, Field);
     border: 1px solid var(--tg-theme-hint-color, GrayText); border-radius: 10px;
   }
+  button {
+    box-sizing: border-box; width: 100%; margin-top: 16px; padding: 14px; font: inherit; font-weight: 600;
+    color: var(--tg-theme-button-text-color, #fff); background: var(--tg-theme-button-color, #2481cc);
+    border: 0; border-radius: 10px;
+  }
+  button:disabled { opacity: 0.5; }
   #error { min-height: 1.4em; margin-top: 12px; color: var(--tg-theme-destructive-text-color, #d33); }
 </style>
 </head>
@@ -29,6 +35,7 @@
   <p class="hint">Horário de Lisboa</p>
   <label for="quando">Data e hora</label>
   <input id="quando" type="datetime-local" step="60">
+  <button id="agendar" type="button">Agendar</button>
   <div id="error" role="alert"></div>
 
 <script>
@@ -66,6 +73,7 @@
 
   var tg = window.Telegram && window.Telegram.WebApp;
   var input = document.getElementById('quando');
+  var button = document.getElementById('agendar');
   var error = document.getElementById('error');
   var id = reminderId(location.search);
 
@@ -88,13 +96,16 @@
   // de teclado (o nosso caso, o único em que sendData funciona) não recebe os dados de inicialização.
   if (!tg || !tg.platform || tg.platform === 'unknown') {
     showError('Abra esta página pelo botão do bot, no Telegram.');
+    button.disabled = true;
   } else if (id === null) {
     showError('Esta página precisa ser aberta pelo botão do /lembrete.');
+    button.disabled = true;
   } else {
     tg.ready();
     tg.expand();
-    tg.MainButton.setText('Agendar').show();
-    tg.MainButton.onClick(submit);
+    // A confirmação é um botão da própria página, e não o botão principal do Telegram (MainButton): ele não aparecia
+    // no Telegram para Android com o Mini App aberto por botão de teclado, e sem ele não havia como confirmar.
+    button.addEventListener('click', submit);
   }
 })();
 </script>
